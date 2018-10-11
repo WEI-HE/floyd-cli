@@ -70,7 +70,7 @@ def process_data_ids(data_ids):
                       "\tfloyd run --data <namespace>/[projects|dataset]/<dataset_or_project_name>/<version>:<mounting_point>\n"
                       "\tfloyd run --data <data_id> (DEPRECATED)\n"
                       "\tfloyd run --data <data_id>:<mounting_point> (DEPRECATED)\n"
-                      "\n Note: Argument can contains only alphanumeric and - chars"
+                      "\n Note: Argument can contain only alphanumeric and - chars"
                       ) % data_name_or_id)
         path = None
         if ':' in data_name_or_id:
