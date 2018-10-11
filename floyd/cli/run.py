@@ -5,6 +5,7 @@ from time import sleep
 import webbrowser
 import sys
 import yaml
+import re
 try:
     from pipes import quote as shell_quote
 except ImportError:
@@ -38,6 +39,16 @@ from floyd.cli.data import get_data_object
 from floyd.cli.experiment import get_log_id, follow_logs
 from floyd.cli.utils import current_project_namespace, read_yaml_config
 
+# DEPRECATED: <data_id> or <data_id>:<mounting_point>
+DATAID_PATTERN = '[a-zA-Z0-9]+(\:\/?[a-zA-Z0-9\-]+\/?)?'
+
+# <namespace>/[projects|dataset]/<dataset_or_project_name>
+# or <namespace>/[projects|dataset]/<dataset_or_project_name><mounting_point>
+# or <namespace>/[projects|dataset]/<dataset_or_project_name>/<version>
+# or <namespace>/[projects|dataset]/<dataset_or_project_name>/<version>:<mounting_point>
+DATANAME_PATTERN = '[a-zA-Z0-9\-]+\/(datasets|projects)\/[a-zA-Z0-9\-]+(\/[0-9]+)?(\:\/?[a-zA-Z0-9\-]+\/?)?'
+DATAMOUNT_PATTERN = '^(%s|%s)$' % (DATAID_PATTERN, DATANAME_PATTERN)
+
 
 def process_data_ids(data_ids):
     if len(data_ids) > 5:
@@ -51,6 +62,16 @@ def process_data_ids(data_ids):
     processed_data_ids = []
 
     for data_name_or_id in data_ids:
+        if not re.match(DATAMOUNT_PATTERN, data_name_or_id):
+            sys.exit(("Argument '%s' doesn't match any recognized pattern:\n"
+                      "\tfloyd run --data <namespace>/[projects|dataset]/<dataset_or_project_name>\n"
+                      "\tfloyd run --data <namespace>/[projects|dataset]/<dataset_or_project_name>:<mounting_point>\n"
+                      "\tfloyd run --data <namespace>/[projects|dataset]/<dataset_or_project_name>/<version>\n"
+                      "\tfloyd run --data <namespace>/[projects|dataset]/<dataset_or_project_name>/<version>:<mounting_point>\n"
+                      "\tfloyd run --data <data_id> (DEPRECATED)\n"
+                      "\tfloyd run --data <data_id>:<mounting_point> (DEPRECATED)\n"
+                      "\n Note: Argument can contains only alphanumeric and - chars"
+                      ) % data_name_or_id)
         path = None
         if ':' in data_name_or_id:
             data_name_or_id, path = data_name_or_id.split(':')
@@ -190,7 +211,7 @@ def show_new_job_info(expt_client, job_name, expt_info, mode, open_notebook=True
               type=click.Choice(['job', 'jupyter', 'serve']))
 @click.option('-f', '--follow', is_flag=True, default=False, help='Automatically follow logs')
 @click.option('--tensorboard/--no-tensorboard',
-              help='TensorBoard is now enabled by default')
+              help='Enable tensorboard in the job environment')
 @click.option('--cpu', is_flag=True, default=False, help='Run on a CPU instance')
 @click.option('--gpu2', 'gpu2', is_flag=True, help='Run in a GPU2 instance')
 @click.option('--cpu2', 'cpu2', is_flag=True, help='Run in a CPU2 instance')
@@ -280,6 +301,7 @@ def run(ctx, cpu, gpu, env, message, data, mode, open_notebook, follow, tensorbo
                     description=message or '',
                     command=command_str,
                     mode=mode,
+                    enable_tensorboard=tensorboard,
                     family_id=experiment_config.family_id,
                     inputs=module_inputs,
                     env=env,
@@ -302,7 +324,7 @@ def run(ctx, cpu, gpu, env, message, data, mode, open_notebook, follow, tensorbo
     # Get the actual command entered in the command line
     if max_runtime:
         max_runtime = int(max_runtime)
-    full_command = get_command_line(instance_type, env, message, data, mode, open_notebook, command_str)
+    full_command = get_command_line(instance_type, env, message, data, mode, open_notebook, tensorboard, command_str)
     experiment_request = ExperimentRequest(name=experiment_name,
                                            description=message,
                                            full_command=full_command,
@@ -330,7 +352,7 @@ def run(ctx, cpu, gpu, env, message, data, mode, open_notebook, follow, tensorbo
         follow_logs(instance_log_id)
 
 
-def get_command_line(instance_type, env, message, data, mode, open_notebook, command_str):
+def get_command_line(instance_type, env, message, data, mode, open_notebook, tensorboard, command_str):
     """
     Return a string representing the full floyd command entered in the command line
     """
@@ -349,6 +371,8 @@ def get_command_line(instance_type, env, message, data, mode, open_notebook, com
                 data_item = normalize_data_name(parts[0], use_data_config=False) + ':' + parts[1]
 
             floyd_command += ["--data", data_item]
+    if tensorboard:
+        floyd_command.append("--tensorboard")
     if mode and mode != "job":
         floyd_command += ["--mode", mode]
         if mode == 'jupyter':
